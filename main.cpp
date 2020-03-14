@@ -5,10 +5,10 @@
 #include <set>
 #include <vector>
 
-#define WIDTH 300
-#define HEIGHT 300
+#define WIDTH 600
+#define HEIGHT 600
 
-#define K 3
+#define K 8
 #define N_POINTS 200
 
 #define REGULAR_POINT_SIZE 4
@@ -34,6 +34,7 @@ class ColorProvider {
 
 class Point {
   public:
+    Color color() const { return mColor; }
     bool operator<(const Point& other) const { return this->x() == other.x() ? this->y() < other.y() : this->x() < other.x(); }
 
   protected:
@@ -97,9 +98,11 @@ class Centroid : public Point {
         ),
         mX(x),
         mY(y) {}
-    void set(const int x, const int y) {
+    bool set(const int x, const int y) {
+        const bool changed = x != mX || y != mY;
         mX = x;
         mY = y;
+        return changed;
     }
     
   private:
@@ -134,7 +137,7 @@ void put_points(std::set<Centroid>& centroids, std::set<RegularPoint>& points) {
         const int x = rand() % WIDTH;
         const int y = rand() % HEIGHT;
         const Color color = ColorProvider::get();
-        centroids.push_back(Centroid(x, y, color));
+        centroids.insert(Centroid(x, y, color));
     }
     for (int i = 0; i < N_POINTS; i++) {
         const int x = rand() % WIDTH;
@@ -158,4 +161,27 @@ std::map<Centroid, std::set<RegularPoint>> assign_centroids(const std::set<Centr
         centrMap[best].insert(p);
     }
     return centrMap;
+}
+
+void draw(const std::set<Centroid>& centroids, const std::set<RegularPoint>& points) {
+    auto map = assign_centroids(centroids, points);
+    for (const auto& c : centroids)
+        for (const auto& p : map[c])
+            connect(p, c, c.color());
+    SDL_RenderPresent(renderer);
+}
+
+void set_centroids(std::set<Centroid>& centroids, const std::set<RegularPoint>& points) {
+
+}
+
+int main() {
+    init();
+    std::set<Centroid> centroids;
+    std::set<RegularPoint> points;
+    put_points(centroids, points);
+    draw(centroids, points);
+    keep_window();
+    quit();
+    return 0;
 }

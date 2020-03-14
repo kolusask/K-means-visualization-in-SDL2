@@ -3,6 +3,9 @@
 #define WIDTH 300
 #define HEIGHT 300
 
+#define K 3
+#define N_POINTS 200
+
 #define REGULAR_POINT_SIZE 4
 #define CENTROID_SIZE 6
 
@@ -16,8 +19,9 @@ struct Color {
 
 class Point {
   protected:
-    Point(const unsigned x, const unsigned y, const Color& color, const SDL_Rect rect) : mX(x), mY(y), mColor(color), mRect(rect) {}
-    const unsigned mX, mY;
+    Point(const Color& color, const SDL_Rect rect) : mColor(color), mRect(rect) {}
+    virtual unsigned x() const = 0;
+    virtual unsigned y() const = 0;
     Color mColor;
     const SDL_Rect mRect;
 
@@ -44,28 +48,42 @@ class RegularPoint : public Point {
   public:
     RegularPoint(const unsigned x, const unsigned y) :
         Point(
-            x, y, {0, 0, 0}, 
+            {0, 0, 0}, 
             {
                 x - (REGULAR_POINT_SIZE / 2), 
                 y - (REGULAR_POINT_SIZE / 2), 
                 REGULAR_POINT_SIZE, 
                 REGULAR_POINT_SIZE 
             }
-        ) {}
+        ),
+        mX(x),
+        mY(y) {}
+  
+  private:
+    unsigned x() const override { return mX; }
+    unsigned y() const override { return mY; }
+    const unsigned mX, mY;
 };
 
 class Centroid : public Point {
   public:
     Centroid(const unsigned x, const unsigned y, const Color color) :
         Point(
-            x, y, color,
+            color,
             {
                 x - (CENTROID_SIZE / 2),
                 y - (CENTROID_SIZE / 2),
                 CENTROID_SIZE,
                 CENTROID_SIZE
             }
-        ) {}
+        ),
+        mX(x),
+        mY(y) {}
+    
+  private:
+    unsigned x() const override { return mX; }
+    unsigned y() const override { return mY; }
+    unsigned mX, mY;
 };
 
 void init() {

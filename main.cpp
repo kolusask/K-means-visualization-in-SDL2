@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <SDL2/SDL.h>
 #include <cstdlib>
 #include <map>
@@ -127,7 +128,7 @@ void keep_window() {
     } while (!((event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) || event.type == SDL_QUIT));
 }
 
-void put_points(std::vector<Centroid>& centroids, std::set<RegularPoint>& points) {
+void put_points(std::set<Centroid>& centroids, std::set<RegularPoint>& points) {
     srand(time(nullptr));
     for (int i = 0; i < K; i++) {
         const int x = rand() % WIDTH;
@@ -142,9 +143,19 @@ void put_points(std::vector<Centroid>& centroids, std::set<RegularPoint>& points
     }
 }
 
-std::map<Centroid, std::set<RegularPoint>> assign_centroids(const std::vector<Centroid>& centroids, const std::set<RegularPoint>& points) {
+std::map<Centroid, std::set<RegularPoint>> assign_centroids(const std::set<Centroid>& centroids, const std::set<RegularPoint>& points) {
     std::map<Centroid, std::set<RegularPoint>> centrMap;
     for (const auto& c : centroids)
         centrMap.insert({c, std::set<RegularPoint>()});
-    
+    for (auto p : points) {
+        auto& best = *std::min_element(
+            centroids.begin(), 
+            centroids.end(), 
+            [&p](const Centroid& c1, const Centroid& c2) -> bool {
+                return distance(p, c1) < distance(p, c2);
+            }
+        );
+        centrMap[best].insert(p);
+    }
+    return centrMap;
 }

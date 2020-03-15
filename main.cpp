@@ -1,18 +1,23 @@
 #include <algorithm>
 #include <SDL2/SDL.h>
 #include <cstdlib>
+#include <iostream>
 #include <map>
+#include <memory>
+#include <numeric>
 #include <set>
 #include <vector>
+
+#define K 18
+#define N_POINTS 2000
 
 #define WIDTH 600
 #define HEIGHT 600
 
-#define K 8
-#define N_POINTS 200
-
 #define REGULAR_POINT_SIZE 4
 #define CENTROID_SIZE 6
+
+#define DELAY 40
 
 SDL_Window* window;
 SDL_Renderer* renderer;
@@ -35,20 +40,24 @@ class ColorProvider {
 class Point {
   public:
     Color color() const { return mColor; }
-    bool operator<(const Point& other) const { return this->x() == other.x() ? this->y() < other.y() : this->x() < other.x(); }
-
-  protected:
-    Point(const Color& color, const SDL_Rect rect) : mColor(color), mRect(rect) {}
     virtual int x() const = 0;
     virtual int y() const = 0;
+    bool operator<(const Point& other) const { return this->mId < other.mId; }
+
+  protected:
+    Point(const Color& color, const SDL_Rect rect) : mColor(color), mRect(rect), mId(sCount++) {}
     Color mColor;
     const SDL_Rect mRect;
+    const unsigned mId;
 
   private:
+    static unsigned sCount;
     void draw() const { SDL_RenderFillRect(renderer, &mRect); }
     friend double distance(const Point& p1, const Point& p2);
     friend void connect(const Point& p1, const Point& p2, const Color& color);
 };
+
+unsigned Point::sCount = 0;
 
 double distance(const Point& p1, const Point& p2) {
     double dX = double(p1.x()) - p2.x();
@@ -98,7 +107,7 @@ class Centroid : public Point {
         ),
         mX(x),
         mY(y) {}
-    bool set(const int x, const int y) {
+    bool set(const int x, const int y) const {
         const bool changed = x != mX || y != mY;
         mX = x;
         mY = y;
@@ -108,7 +117,7 @@ class Centroid : public Point {
   private:
     int x() const override { return mX; }
     int y() const override { return mY; }
-    int mX, mY;
+    mutable int mX, mY;
 };
 
 void init() {
@@ -131,13 +140,13 @@ void keep_window() {
     } while (!((event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) || event.type == SDL_QUIT));
 }
 
-void put_points(std::set<Centroid>& centroids, std::set<RegularPoint>& points) {
+void put_points(std::set<std::shared_ptr<Centroid>>& centroids, std::set<RegularPoint>& points) {
     srand(time(nullptr));
     for (int i = 0; i < K; i++) {
         const int x = rand() % WIDTH;
         const int y = rand() % HEIGHT;
         const Color color = ColorProvider::get();
-        centroids.insert(Centroid(x, y, color));
+        centroids.insert(std::make_shared<Centroid>(x, y, color));
     }
     for (int i = 0; i < N_POINTS; i++) {
         const int x = rand() % WIDTH;
@@ -146,16 +155,16 @@ void put_points(std::set<Centroid>& centroids, std::set<RegularPoint>& points) {
     }
 }
 
-std::map<Centroid, std::set<RegularPoint>> assign_centroids(const std::set<Centroid>& centroids, const std::set<RegularPoint>& points) {
-    std::map<Centroid, std::set<RegularPoint>> centrMap;
+std::map<std::shared_ptr<Centroid>, std::set<RegularPoint>> assign_centroids(const std::set<std::shared_ptr<Centroid>>& centroids, const std::set<RegularPoint>& points) {
+    std::map<std::shared_ptr<Centroid>, std::set<RegularPoint>> centrMap;
     for (const auto& c : centroids)
         centrMap.insert({c, std::set<RegularPoint>()});
     for (auto p : points) {
         auto& best = *std::min_element(
             centroids.begin(), 
             centroids.end(), 
-            [&p](const Centroid& c1, const Centroid& c2) -> bool {
-                return distance(p, c1) < distance(p, c2);
+            [&p](const std::shared_ptr<Centroid>& c1, const std::shared_ptr<Centroid>& c2) -> bool {
+                return distance(p, *c1) < distance(p, *c2);
             }
         );
         centrMap[best].insert(p);
@@ -163,24 +172,60 @@ std::map<Centroid, std::set<RegularPoint>> assign_centroids(const std::set<Centr
     return centrMap;
 }
 
-void draw(const std::set<Centroid>& centroids, const std::set<RegularPoint>& points) {
-    auto map = assign_centroids(centroids, points);
-    for (const auto& c : centroids)
-        for (const auto& p : map[c])
-            connect(p, c, c.color());
+void draw(std::map<std::shared_ptr<Centroid>, std::set<RegularPoint>>& map) {
+    SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
+    SDL_RenderClear(renderer);
+    for (const auto& entry : map)
+        for (const auto& p : entry.second)
+            connect(p, *entry.first, entry.first->color());
     SDL_RenderPresent(renderer);
 }
 
-void set_centroids(std::set<Centroid>& centroids, const std::set<RegularPoint>& points) {
+void calculate_mean_point(const std::set<RegularPoint>& points, int& x, int& y) {
+    long sumX = std::accumulate(
+        points.begin(), 
+        points.end(), 
+        0, 
+        [](const int x, const Point& p) -> long {
+            return x + p.x();
+        }
+    );
+    x = sumX / points.size();
+    long sumY = std::accumulate(
+        points.begin(), 
+        points.end(), 
+        0, 
+        [](const int y, const Point& p) -> long {
+            return y + p.y();
+        }
+    );
+    y = sumY / points.size();
+}
 
+bool set_centroids(std::map<std::shared_ptr<Centroid>, std::set<RegularPoint>>& map, const std::set<RegularPoint>& points) {
+    int x, y;
+    bool changed = false;
+    for (const auto& entry : map) {
+        calculate_mean_point(entry.second, x, y);
+        changed = entry.first->set(x, y) || changed;
+    }
+    return changed;
 }
 
 int main() {
     init();
-    std::set<Centroid> centroids;
+    std::set<std::shared_ptr<Centroid>> centroids;
     std::set<RegularPoint> points;
     put_points(centroids, points);
-    draw(centroids, points);
+    auto centrMap = assign_centroids(centroids, points);
+    draw(centrMap);
+    bool stop = false;
+    while (!stop) {
+        centrMap = assign_centroids(centroids, points);
+        draw(centrMap);
+        SDL_Delay(DELAY);
+        stop = !set_centroids(centrMap, points);
+    }
     keep_window();
     quit();
     return 0;
